@@ -1,0 +1,230 @@
+/* ============================================================
+   cortex.css — Glassmorphic styles for the Cortex RAG UI
+   ============================================================ */
+
+/* ---------- Base ---------- */
+body {
+  background-color: #f9f9f9;
+  overflow-x: hidden;
+}
+
+/* ---------- Grain overlay ---------- */
+.grain-overlay {
+  pointer-events: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  background-size: 200px 200px;
+}
+
+/* ---------- Glass panel ---------- */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 40px 40px -40px rgba(0, 0, 0, 0.06);
+}
+
+.glass-panel:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 24px rgba(0, 0, 0, 0.03), 0 0 2px rgba(255, 255, 255, 0.5);
+}
+
+/* ---------- Custom scrollbar ---------- */
+.custom-scrollbar::-webkit-scrollbar { width: 4px; }
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 10px;
+}
+.custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.25); }
+
+/* ---------- Material Symbols defaults ---------- */
+.material-symbols-outlined {
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+}
+
+/* ---------- Thinking card — shimmer + pulse ---------- */
+@keyframes shimmer {
+  0%   { transform: translateX(-100%) skewX(-20deg); }
+  100% { transform: translateX(200%)  skewX(-20deg); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 0.85; }
+}
+
+.thinking-pulse { animation: pulse-soft 3s ease-in-out infinite; }
+
+.shimmer-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  opacity: 0.4;
+}
+.shimmer-layer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(
+    to right,
+    rgba(255,255,255,0) 0%,
+    rgba(255,255,255,0.5) 50%,
+    rgba(255,255,255,0) 100%
+  );
+  animation: shimmer 2.8s infinite linear;
+}
+
+/* ---------- Skeleton lines ---------- */
+.skeleton-line {
+  height: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent 25%,
+    rgba(255,255,255,0.5) 50%,
+    transparent 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.8s infinite;
+}
+@keyframes skeleton-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---------- Streaming cursor ---------- */
+.streaming-cursor::after {
+  content: "▋";
+  display: inline-block;
+  animation: blink 0.8s step-end infinite;
+  margin-left: 2px;
+  opacity: 0.7;
+}
+@keyframes blink {
+  0%, 100% { opacity: 0.7; }
+  50%       { opacity: 0; }
+}
+
+/* ---------- Chat message bubbles ---------- */
+.msg-user {
+  display: flex;
+  justify-content: flex-end;
+}
+.msg-user .bubble {
+  background: #000;
+  color: #fff;
+  border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
+  padding: 0.75rem 1.25rem;
+  max-width: 72%;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.msg-assistant {
+  display: flex;
+  justify-content: flex-start;
+}
+.msg-assistant .bubble-wrap {
+  max-width: 88%;
+  width: 100%;
+}
+
+/* Answer card */
+.answer-card {
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 1.5rem;
+  padding: 2rem;
+  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.08);
+}
+
+.answer-card .answer-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.answer-card .answer-body {
+  font-size: 16px;
+  line-height: 1.75;
+  color: #1a1c1c;
+  white-space: pre-wrap;
+}
+
+/* Feedback row */
+.feedback-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  opacity: 0.55;
+  transition: opacity 0.2s;
+}
+.feedback-row:hover { opacity: 1; }
+.feedback-row button {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+.feedback-row button:hover { color: #000; }
+
+/* ---------- View transitions ---------- */
+.view { animation: fadeUp 0.35s ease both; }
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ---------- Toast ---------- */
+#toast { transition: opacity 0.3s, transform 0.3s; }
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.hide { opacity: 0; transform: translateY(12px); }
+
+/* ---------- Suggestion chips ---------- */
+.suggestion-chip { transition: background 0.15s, color 0.15s, transform 0.1s; }
+.suggestion-chip:active { transform: scale(0.95); }
+
+/* ---------- File item ---------- */
+.file-item { transition: background 0.15s; }
+
+/* ---------- Sidebar collapse ---------- */
+#sidebar { transition: transform 0.3s ease; }
+#sidebar.collapsed { transform: translateX(-100%); }
+#main    { transition: margin-left 0.3s ease; }
+#main.expanded { margin-left: 0 !important; }
+
+/* ---------- URL textarea ---------- */
+#url-input { outline: none; transition: box-shadow 0.2s; }
+#url-input:focus { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08); }
+
+/* ---------- Button press ---------- */
+button:active { transform: scale(0.97); }
