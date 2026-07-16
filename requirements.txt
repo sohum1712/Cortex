@@ -5,10 +5,12 @@ python-dotenv==1.0.1
 # ── WSGI server (production) ──────────────────────────────────────────────────
 gunicorn==23.0.0
 
-# ── LangChain ─────────────────────────────────────────────────────────────────
+# ── LangChain core stack (0.3.x series, all mutually compatible) ──────────────
+# langchain-core is NOT pinned to an exact version — let pip pick the latest
+# 0.3.x that satisfies all packages below simultaneously.
 langchain==0.3.24
 langchain-community==0.3.23
-langchain-core==0.3.56
+langchain-core>=0.3.60,<0.4.0
 
 # ── LLM provider — Groq (cloud, API key required) ─────────────────────────────
 langchain-groq==0.2.4
@@ -29,5 +31,7 @@ beautifulsoup4==4.13.3
 lxml==5.3.1
 
 # ── Vector store — ChromaDB ───────────────────────────────────────────────────
+# langchain-chroma 0.2.x is compatible with langchain-core 0.3.x
+# (1.x requires langchain-core 1.x which is a different major series)
 chromadb==1.5.9
-langchain-chroma==1.1.0
+langchain-chroma==0.2.4
