@@ -24,8 +24,9 @@ workers = int(os.environ.get("GUNICORN_WORKERS", max(2, multiprocessing.cpu_coun
 threads = int(os.environ.get("GUNICORN_THREADS", 2))
 
 # ── Binding ───────────────────────────────────────────────────────────────────
+# Render (and most PaaS) injects $PORT at runtime — honour it first.
 host = os.environ.get("FLASK_HOST", "0.0.0.0")
-port = os.environ.get("FLASK_PORT", "5000")
+port = os.environ.get("PORT") or os.environ.get("FLASK_PORT", "5000")
 bind = f"{host}:{port}"
 
 # ── Timeouts ──────────────────────────────────────────────────────────────────

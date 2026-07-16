@@ -1,0 +1,55 @@
+services:
+  - type: web
+    name: cortex
+    runtime: python
+    plan: free
+
+    # ── Build ──────────────────────────────────────────────────────────────────
+    buildCommand: pip install -r requirements.txt
+
+    # ── Start ─────────────────────────────────────────────────────────────────
+    # Render injects $PORT automatically; gunicorn.conf.py reads it.
+    startCommand: gunicorn -c gunicorn.conf.py wsgi:application
+
+    # ── Health check ──────────────────────────────────────────────────────────
+    healthCheckPath: /health
+
+    # ── Persistent disk (ChromaDB + uploaded files) ───────────────────────────
+    # Free tier: 1 GB. Data survives deploys but NOT instance restarts on free tier.
+    # Upgrade to a paid plan if you need guaranteed persistence.
+    disk:
+      name: cortex-data
+      mountPath: /data
+      sizeGB: 1
+
+    # ── Environment variables ─────────────────────────────────────────────────
+    # Values marked `sync: false` must be set manually in the Render dashboard.
+    # Never commit real secrets here.
+    envVars:
+      - key: FLASK_ENV
+        value: production
+
+      - key: EMBED_PROVIDER
+        value: huggingface
+
+      - key: EMBED_MODEL
+        value: all-MiniLM-L6-v2
+
+      # Set this in the Render dashboard — do NOT commit the real key.
+      - key: GROQ_API_KEY
+        sync: false
+
+      # Paths to persistent disk mount
+      - key: UPLOAD_FOLDER
+        value: /data/uploads
+
+      - key: INDEX_PATH
+        value: /data/index
+
+      # HuggingFace model cache — keeps models on the persistent disk so they
+      # aren't re-downloaded on every cold start.
+      - key: HF_HOME
+        value: /data/hf_cache
+
+      - key: TRANSFORMERS_CACHE
+        value: /data/hf_cache

@@ -78,8 +78,30 @@ class Settings:
         return os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant").strip()
 
     @property
+    def EMBED_PROVIDER(self) -> str:
+        """
+        Embedding backend: 'huggingface' (default, works on Render/cloud) or
+        'ollama' (local only — requires Ollama running on OLLAMA_HOST).
+        """
+        return os.environ.get("EMBED_PROVIDER", "huggingface").strip().lower()
+
+    @property
     def EMBED_MODEL(self) -> str:
-        return os.environ.get("EMBED_MODEL", "mxbai-embed-large").strip()
+        """
+        Embedding model name.
+        HuggingFace default : all-MiniLM-L6-v2  (384-dim, ~90 MB, CPU-friendly)
+        Ollama default      : mxbai-embed-large  (1024-dim, requires local Ollama)
+        """
+        default = (
+            "mxbai-embed-large"
+            if os.environ.get("EMBED_PROVIDER", "huggingface").strip().lower() == "ollama"
+            else "all-MiniLM-L6-v2"
+        )
+        return os.environ.get("EMBED_MODEL", default).strip()
+
+    @property
+    def OLLAMA_HOST(self) -> str:
+        return os.environ.get("OLLAMA_HOST", "http://localhost:11434").strip()
 
     @property
     def CHUNK_SIZE(self) -> int:

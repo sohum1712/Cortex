@@ -41,6 +41,10 @@ data/conversation.json
 Thumbs.db
 desktop.ini
 
+# ── HuggingFace model cache (can be hundreds of MB) ──────────────────────────
+.cache/
+hf_cache/
+
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/

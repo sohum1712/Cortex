@@ -13,11 +13,15 @@ langchain-core==0.3.56
 # ── LLM provider — Groq (cloud, API key required) ─────────────────────────────
 langchain-groq==0.2.4
 
-# ── Embeddings — Ollama (local, model: mxbai-embed-large) ─────────────────────
-# langchain-ollama is kept because OllamaEmbeddings is used in vector_store.py.
-# You no longer need to pull llama3.2:3b — only the embedding model is needed.
-langchain-ollama==0.3.2
-ollama==0.4.8
+# ── Embeddings — HuggingFace sentence-transformers (default, cloud-compatible) ─
+# Runs entirely in-process on CPU. No external service required.
+# Default model: all-MiniLM-L6-v2 (~90 MB, 384-dim vectors)
+sentence-transformers==3.4.1
+
+# ── Embeddings — Ollama (optional, local development only) ────────────────────
+# Uncomment these two lines only when running locally with EMBED_PROVIDER=ollama.
+# langchain-ollama==0.3.2
+# ollama==0.4.8
 
 # ── Document loading ──────────────────────────────────────────────────────────
 pypdf==5.4.0
@@ -25,6 +29,5 @@ beautifulsoup4==4.13.3
 lxml==5.3.1
 
 # ── Vector store — ChromaDB ───────────────────────────────────────────────────
-# chromadb 1.x ships prebuilt wheels on Windows (0.6.x may require MSVC for chroma-hnswlib).
 chromadb==1.5.9
 langchain-chroma==1.1.0

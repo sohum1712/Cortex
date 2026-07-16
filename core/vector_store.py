@@ -36,8 +36,6 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
 from langchain_chroma import Chroma
 from langchain_core.vectorstores import VectorStoreRetriever
-from langchain_ollama.embeddings import OllamaEmbeddings
-
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -47,16 +45,35 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 EMBEDDING_MODEL = settings.EMBED_MODEL
+EMBED_PROVIDER  = settings.EMBED_PROVIDER  # "huggingface" | "ollama"
 
-# Known embedding dimension for mxbai-embed-large — avoids a live Ollama call
-# on startup just to create an empty index.
-# mxbai-embed-large produces 1024-dim vectors; nomic-embed-text produces 768.
+# Known embedding dimensions per model name.
 _EMBED_DIM_MAP = {
-    "mxbai-embed-large":  1024,
-    "nomic-embed-text":   768,
-    "all-minilm":         384,
+    # HuggingFace / sentence-transformers
+    "all-MiniLM-L6-v2":            384,
+    "all-mpnet-base-v2":           768,
+    "BAAI/bge-small-en-v1.5":      384,
+    "BAAI/bge-base-en-v1.5":       768,
+    # Ollama (local)
+    "mxbai-embed-large":          1024,
+    "nomic-embed-text":            768,
+    "all-minilm":                  384,
 }
-DEFAULT_EMBED_DIM = _EMBED_DIM_MAP.get(EMBEDDING_MODEL, 1024)
+DEFAULT_EMBED_DIM = _EMBED_DIM_MAP.get(EMBEDDING_MODEL, 384)
+
+
+def _build_embeddings(provider: str, model: str):
+    """Return the correct LangChain embeddings object based on provider."""
+    if provider == "ollama":
+        from langchain_ollama.embeddings import OllamaEmbeddings
+        return OllamaEmbeddings(model=model)
+    # Default: huggingface (works everywhere — no local server required)
+    from langchain_community.embeddings import HuggingFaceEmbeddings
+    return HuggingFaceEmbeddings(
+        model_name=model,
+        model_kwargs={"device": "cpu"},
+        encode_kwargs={"normalize_embeddings": True},
+    )
 
 DEFAULT_INDEX_PATH = Path("data/index")
 
@@ -94,6 +111,7 @@ class VectorStore:
         self.persist          = persist
         self.retrieval_k      = retrieval_k
         self._embedding_model = embedding_model
+        self._embed_provider  = EMBED_PROVIDER
         self._collection_name = settings.CHROMA_COLLECTION_NAME
         self._distance_metric = settings.CHROMA_DISTANCE_METRIC
         self._chroma_path     = self._resolve_chroma_path()
@@ -101,8 +119,12 @@ class VectorStore:
         # Resolve embedding dimension for the chosen model.
         self._embed_dim = _EMBED_DIM_MAP.get(embedding_model, DEFAULT_EMBED_DIM)
 
-        # Embeddings object is cheap to create — no network call here.
-        self.embeddings_model = OllamaEmbeddings(model=embedding_model)
+        # Build embeddings object — HuggingFace (cloud/free) or Ollama (local).
+        logger.info(
+            "Initialising embeddings: provider=%s model=%s",
+            self._embed_provider, self._embedding_model,
+        )
+        self.embeddings_model = _build_embeddings(self._embed_provider, embedding_model)
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
