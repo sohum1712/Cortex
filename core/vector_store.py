@@ -1,36 +1,44 @@
 """
-core/vector_store.py — FAISS-backed vector store with incremental indexing.
+core/vector_store.py — ChromaDB-backed vector store with incremental indexing.
 
 Key design decisions
 --------------------
-- Lazy initialisation: the FAISS store is only created when the first
-  document is added, so the app starts without requiring Ollama to be up.
+- LangChain wrapper: uses langchain_chroma.Chroma (not raw chromadb client)
+  so add_documents / similarity_search_with_score match the prior FAISS API.
+- Lazy initialisation: the Chroma collection is only opened when the first
+  document is added (or when a persisted store is found on disk), so the app
+  starts without requiring Ollama to be up.
 - Document hash cache (SHA-256) prevents re-embedding unchanged files.
 - TextSplitter instantiated once in __init__, not per call.
-- Embedding dimension stored as a class constant — no live Ollama call
-  needed just to create an empty index.
-- No hard score threshold — the LLM handles relevance judgement in the prompt.
-- Chunk size 800 / overlap 100 — fewer chunks, faster search, richer context.
-- File-hash registry persisted alongside the FAISS index so the cache
+- Embedding model + dimension stored in collection metadata — mismatch triggers
+  automatic wipe and rebuild (same behaviour as the old FAISS dimension check).
+- Chunk size / overlap configurable via config.py (defaults 800 / 100).
+- top_k configurable, default 5.
+- similarity_search_with_scores() exposes raw L2 distances so the caller
+  (LLMRAGHandler) can apply a similarity threshold and skip the LLM call
+  entirely when no relevant content is found.
+- File-hash registry persisted alongside the Chroma store so the cache
   survives restarts.
 """
 
 import hashlib
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 
 import bs4
-import faiss
+import chromadb
 from langchain.schema import Document
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.docstore.in_memory import InMemoryDocstore
 from langchain_community.document_loaders import PyPDFLoader, WebBaseLoader
-from langchain_community.vectorstores import FAISS
+from langchain_chroma import Chroma
 from langchain_core.vectorstores import VectorStoreRetriever
 from langchain_ollama.embeddings import OllamaEmbeddings
+
+from config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -38,48 +46,60 @@ logger = logging.getLogger(__name__)
 # Module-level constants
 # ---------------------------------------------------------------------------
 
-CHAT_MODEL      = "llama3.2:3b"
-EMBEDDING_MODEL = "nomic-embed-text"
+EMBEDDING_MODEL = settings.EMBED_MODEL
 
-# Known embedding dimension for nomic-embed-text — avoids a live Ollama call
+# Known embedding dimension for mxbai-embed-large — avoids a live Ollama call
 # on startup just to create an empty index.
-NOMIC_EMBED_DIM = 768
+# mxbai-embed-large produces 1024-dim vectors; nomic-embed-text produces 768.
+_EMBED_DIM_MAP = {
+    "mxbai-embed-large":  1024,
+    "nomic-embed-text":   768,
+    "all-minilm":         384,
+}
+DEFAULT_EMBED_DIM = _EMBED_DIM_MAP.get(EMBEDDING_MODEL, 1024)
 
 DEFAULT_INDEX_PATH = Path("data/index")
+
+# Legacy FAISS artefacts — removed when a stale index is wiped.
+_LEGACY_FAISS_FILES = ("index.faiss", "index.pkl")
 
 
 class VectorStore:
     """
-    Lazy-initialised FAISS vector store with incremental PDF and URL indexing.
+    Lazy-initialised Chroma vector store with incremental PDF and URL indexing.
 
-    The underlying FAISS index is not created until the first document is
+    The underlying Chroma collection is not created until the first document is
     added, so constructing VectorStore never requires Ollama to be running.
 
     Parameters
     ----------
-    index_path      : Directory where the FAISS index is persisted.
-    llm_model       : Chat model name (stored for logging; not used directly).
-    embedding_model : Ollama embedding model name.
-    chunk_size      : Characters per text chunk.
-    chunk_overlap   : Character overlap between consecutive chunks.
-    persist         : If True, save index to disk after every change.
+    index_path      : Parent directory for index artefacts (registry JSON, etc.).
+    embedding_model : Ollama embedding model name (embeddings only — LLM is Groq).
+    chunk_size      : Characters per text chunk (default from config).
+    chunk_overlap   : Character overlap between consecutive chunks (default from config).
+    persist         : If True, persist registry after every change (Chroma auto-persists).
     retrieval_k     : Default number of chunks returned per query.
     """
 
     def __init__(
         self,
         index_path: Path = DEFAULT_INDEX_PATH,
-        llm_model: str = CHAT_MODEL,
         embedding_model: str = EMBEDDING_MODEL,
-        chunk_size: int = 800,
-        chunk_overlap: int = 100,
+        chunk_size: int = settings.CHUNK_SIZE,
+        chunk_overlap: int = settings.CHUNK_OVERLAP,
         persist: bool = True,
-        retrieval_k: int = 3,
+        retrieval_k: int = settings.TOP_K,
     ) -> None:
-        self.index_path  = Path(index_path)
-        self.llm_model   = llm_model
-        self.persist     = persist
-        self.retrieval_k = retrieval_k
+        self.index_path       = Path(index_path)
+        self.persist          = persist
+        self.retrieval_k      = retrieval_k
+        self._embedding_model = embedding_model
+        self._collection_name = settings.CHROMA_COLLECTION_NAME
+        self._distance_metric = settings.CHROMA_DISTANCE_METRIC
+        self._chroma_path     = self._resolve_chroma_path()
+
+        # Resolve embedding dimension for the chosen model.
+        self._embed_dim = _EMBED_DIM_MAP.get(embedding_model, DEFAULT_EMBED_DIM)
 
         # Embeddings object is cheap to create — no network call here.
         self.embeddings_model = OllamaEmbeddings(model=embedding_model)
@@ -92,64 +112,175 @@ class VectorStore:
         self._registry_path: Path = self.index_path / "indexed_files.json"
         self._indexed_hashes: Set[str] = self._load_registry()
 
-        # None until _ensure_store() is called for the first time.
-        self._store: Optional[FAISS] = None
+        # None until _ensure_store() is called or _try_load_existing() succeeds.
+        self._store: Optional[Chroma] = None
         self._try_load_existing()
+
+    # ------------------------------------------------------------------
+    # Internal: paths & metadata
+    # ------------------------------------------------------------------
+
+    def _resolve_chroma_path(self) -> Path:
+        """Return the Chroma persist directory (env override or <index_path>/chroma)."""
+        override = settings.CHROMA_PERSIST_DIR
+        if override is not None:
+            return Path(override)
+        return self.index_path / "chroma"
+
+    def _collection_metadata(self) -> dict:
+        """Metadata written when a new Chroma collection is created."""
+        return {
+            "hnsw:space":  self._distance_metric,
+            "embed_model": self._embedding_model,
+            "embed_dim":   str(self._embed_dim),
+        }
+
+    def _chroma_has_data(self) -> bool:
+        """True when a persisted Chroma database exists on disk."""
+        return (self._chroma_path / "chroma.sqlite3").exists()
 
     # ------------------------------------------------------------------
     # Internal: store lifecycle
     # ------------------------------------------------------------------
 
-    def _try_load_existing(self) -> None:
-        """Load a persisted FAISS index from disk if one exists."""
-        index_file = self.index_path / "index.faiss"
-        if not index_file.exists():
-            logger.info(
-                "No FAISS index on disk — will create on first document upload."
-            )
-            return
-        t0 = time.perf_counter()
-        logger.info("Loading FAISS index from %s", self.index_path)
-        self._store = FAISS.load_local(
-            str(self.index_path),
-            embeddings=self.embeddings_model,
-            allow_dangerous_deserialization=True,
-        )
-        logger.info("FAISS index loaded in %.2fs", time.perf_counter() - t0)
+    def _read_collection_metadata(self) -> Optional[dict]:
+        """Read metadata from the persisted Chroma collection, if it exists."""
+        if not self._chroma_has_data():
+            return None
+        try:
+            client = chromadb.PersistentClient(path=str(self._chroma_path))
+            collection = client.get_collection(name=self._collection_name)
+            return collection.metadata or {}
+        except Exception as exc:
+            logger.debug("Could not read Chroma collection metadata: %s", exc)
+            return None
 
-    def _ensure_store(self) -> FAISS:
+    def _validate_stored_metadata(self) -> None:
         """
-        Return the FAISS store, creating an empty one if it does not exist yet.
+        Raise ValueError when the on-disk collection was built with a different
+        embedding model or vector dimension than the current configuration.
+        """
+        meta = self._read_collection_metadata()
+        if not meta:
+            return
 
-        This is the only place that constructs a brand-new empty index.
-        Uses the known embedding dimension constant so no Ollama call is needed.
+        stored_model = meta.get("embed_model")
+        stored_dim   = meta.get("embed_dim")
+
+        if stored_model and stored_model != self._embedding_model:
+            raise ValueError(
+                f"Embedding model mismatch: stored={stored_model!r}, "
+                f"current={self._embedding_model!r}. "
+                f"Deleting stale index and rebuilding."
+            )
+
+        if stored_dim is not None:
+            try:
+                if int(stored_dim) != self._embed_dim:
+                    raise ValueError(
+                        f"Embedding dimension mismatch: stored={stored_dim}, "
+                        f"model expects={self._embed_dim}. "
+                        f"Deleting stale index and rebuilding."
+                    )
+            except (TypeError, ValueError) as exc:
+                if "mismatch" in str(exc):
+                    raise
+                logger.debug("Ignoring unparseable embed_dim metadata: %r", stored_dim)
+
+    def _try_load_existing(self) -> None:
+        """
+        Load a persisted Chroma collection from disk if one exists.
+
+        If the collection was built with a different embedding model or
+        dimension, it is automatically deleted and a fresh collection will be
+        created on the next document upload.
+        """
+        if not self._chroma_has_data():
+            legacy = self.index_path / "index.faiss"
+            if legacy.exists():
+                logger.warning(
+                    "Legacy FAISS index found at %s but no Chroma store. "
+                    "Clearing indexed_files.json so PDFs are re-embedded into Chroma "
+                    "(auto-index on next LLM request, or POST /api/rebuild).",
+                    legacy,
+                )
+                # Registry still lists FAISS-era hashes while Chroma is empty —
+                # without this, add_document() would skip every file.
+                self._indexed_hashes = set()
+                if self._registry_path.exists():
+                    self._registry_path.unlink()
+            else:
+                logger.info(
+                    "No Chroma index on disk — will create on first document upload."
+                )
+            return
+
+        t0 = time.perf_counter()
+        logger.info("Loading Chroma collection from %s", self._chroma_path)
+        try:
+            self._validate_stored_metadata()
+            self._store = Chroma(
+                collection_name=self._collection_name,
+                embedding_function=self.embeddings_model,
+                persist_directory=str(self._chroma_path),
+            )
+            logger.info("Chroma collection loaded in %.2fs", time.perf_counter() - t0)
+        except ValueError as exc:
+            logger.warning("Stale Chroma index discarded: %s", exc)
+            self._delete_index_files()
+        except Exception as exc:
+            logger.warning("Could not load Chroma index (%s) — will rebuild.", exc)
+            self._delete_index_files()
+
+    def _delete_index_files(self) -> None:
+        """Remove all persisted index artefacts so a clean rebuild happens."""
+        if self._chroma_path.exists():
+            shutil.rmtree(self._chroma_path)
+            logger.info("Deleted Chroma persist directory: %s", self._chroma_path)
+
+        for fname in (*_LEGACY_FAISS_FILES, "indexed_files.json"):
+            p = self.index_path / fname
+            if p.exists():
+                p.unlink()
+                logger.info("Deleted stale index file: %s", p.name)
+
+        self._indexed_hashes = set()
+        self._store = None
+
+    def _ensure_store(self) -> Chroma:
+        """
+        Return the Chroma store, creating an empty collection if needed.
+
+        No Ollama call is required to construct an empty collection.
         """
         if self._store is not None:
             return self._store
 
+        self._chroma_path.mkdir(parents=True, exist_ok=True)
         logger.info(
-            "Creating new empty FAISS index (dim=%d) at %s",
-            NOMIC_EMBED_DIM, self.index_path,
+            "Creating new Chroma collection %r (metric=%s, dim=%d) at %s",
+            self._collection_name,
+            self._distance_metric,
+            self._embed_dim,
+            self._chroma_path,
         )
-        raw_index = faiss.IndexFlatL2(NOMIC_EMBED_DIM)
-        self._store = FAISS(
+        self._store = Chroma(
+            collection_name=self._collection_name,
             embedding_function=self.embeddings_model,
-            index=raw_index,
-            docstore=InMemoryDocstore(),
-            index_to_docstore_id={},
+            persist_directory=str(self._chroma_path),
+            collection_metadata=self._collection_metadata(),
         )
         return self._store
 
     def _save(self) -> None:
-        """Persist the FAISS index and file-hash registry to disk."""
-        if self.persist and self._store is not None:
+        """Persist the file-hash registry (Chroma writes vectors automatically)."""
+        if self.persist:
             self.index_path.mkdir(parents=True, exist_ok=True)
-            self._store.save_local(str(self.index_path))
             self._save_registry()
 
     # Expose the underlying store as a property for callers that need it.
     @property
-    def vector_store(self) -> Optional[FAISS]:
+    def vector_store(self) -> Optional[Chroma]:
         return self._store
 
     # ------------------------------------------------------------------
@@ -244,19 +375,31 @@ class VectorStore:
     # Retrieval
     # ------------------------------------------------------------------
 
-    def similarity_search(self, question: str, k: int = 3) -> List[Document]:
+    def similarity_search_with_scores(
+        self, question: str, k: int = 0
+    ) -> List[Tuple[Document, float]]:
         """
-        Return the top-k most similar chunks for the given question.
+        Return the top-k most similar chunks with their L2 distance scores.
 
-        Returns an empty list when no index has been built yet (no documents
-        uploaded), allowing the LLM to respond with a "no context" answer.
+        Lower scores = more similar. Returns an empty list when no index
+        has been built yet, allowing the caller to handle the no-context case.
+
+        Score semantics
+        ---------------
+        The Chroma collection is created with ``hnsw:space = "l2"`` (configurable
+        via CHROMA_DISTANCE_METRIC, default ``l2``).  LangChain's
+        ``similarity_search_with_score`` returns the raw distance for this metric,
+        where lower values mean closer vectors — matching the prior FAISS
+        IndexFlatL2 behaviour and LLMRAGHandler's SIMILARITY_THRESHOLD logic.
+        No score inversion or normalisation is applied.
         """
         if self._store is None:
             logger.warning("similarity_search called but no index built yet.")
             return []
 
-        t0      = time.perf_counter()
-        results = self._store.similarity_search_with_score(question, k=k)
+        effective_k = k if k > 0 else self.retrieval_k
+        t0 = time.perf_counter()
+        results = self._store.similarity_search_with_score(question, k=effective_k)
         elapsed = time.perf_counter() - t0
 
         if not results:
@@ -264,9 +407,22 @@ class VectorStore:
 
         scores = ", ".join(f"{s:.3f}" for _, s in results)
         logger.debug(
-            "Search %.2fs | %d chunks | L2 scores: [%s]", elapsed, len(results), scores
+            "Search %.2fs | %d chunks | %s scores: [%s]",
+            elapsed,
+            len(results),
+            self._distance_metric.upper(),
+            scores,
         )
-        return [doc for doc, _ in results]
+        return results
+
+    def similarity_search(self, question: str, k: int = 0) -> List[Document]:
+        """
+        Return the top-k most similar chunks (no scores).
+
+        Convenience wrapper around similarity_search_with_scores for callers
+        that do not need the distance values.
+        """
+        return [doc for doc, _ in self.similarity_search_with_scores(question, k=k)]
 
     def as_retriever(self) -> VectorStoreRetriever:
         return self._ensure_store().as_retriever(

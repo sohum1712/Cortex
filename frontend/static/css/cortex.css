@@ -1,8 +1,9 @@
 /* ============================================================
-   cortex.css — Glassmorphic styles for the Cortex RAG UI
+   cortex.css — Glassmorphic · Floating Navbar + Drawer layout
    ============================================================ */
 
-/* ---------- Base ---------- */
+*, *::before, *::after { box-sizing: border-box; }
+
 body {
   background-color: #f9f9f9;
   overflow-x: hidden;
@@ -14,12 +15,458 @@ body {
   position: fixed;
   inset: 0;
   z-index: 9999;
-  opacity: 0.035;
+  opacity: 0.032;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
   background-size: 200px 200px;
 }
 
-/* ---------- Glass panel ---------- */
+/* ============================================================
+   FLOATING NAVBAR
+   ============================================================ */
+#navbar {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 980px;
+  z-index: 50;
+}
+
+.navbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(255, 255, 255, 0.62);
+  backdrop-filter: blur(24px) saturate(1.8);
+  -webkit-backdrop-filter: blur(24px) saturate(1.8);
+  border: 1px solid rgba(255, 255, 255, 0.75);
+  border-radius: 18px;
+  padding: 7px 10px;
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 4px 12px rgba(0,0,0,0.06),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+  transition: box-shadow 0.25s ease;
+}
+.navbar-inner:hover {
+  box-shadow:
+    0 1px 2px rgba(0,0,0,0.04),
+    0 6px 20px rgba(0,0,0,0.09),
+    inset 0 1px 0 rgba(255,255,255,0.95);
+}
+
+/* All action buttons in one evenly-spaced row */
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Logo */
+.navbar-logo {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  text-decoration: none;
+  flex-shrink: 0;
+  padding: 0 6px;
+}
+
+.logo-text {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  color: #000;
+  line-height: 1;
+}
+
+.logo-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #000;
+  flex-shrink: 0;
+}
+
+/* Thin vertical divider */
+.navbar-divider {
+  width: 1px;
+  height: 20px;
+  background: rgba(0,0,0,0.10);
+  flex-shrink: 0;
+  margin: 0 2px;
+}
+
+/* ── Pill button — every button in the navbar uses this ── */
+.nav-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #1a1c1c;
+  border: 1px solid rgba(0,0,0,0.08);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, color 0.14s, transform 0.1s;
+  white-space: nowrap;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.nav-pill .material-symbols-outlined {
+  font-size: 16px;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20;
+}
+
+.nav-pill:hover {
+  background: rgba(0,0,0,0.05);
+  border-color: rgba(0,0,0,0.14);
+}
+
+.nav-pill:active { transform: scale(0.95); }
+
+/* Accent — New session */
+.nav-pill-accent {
+  background: #000;
+  color: #fff;
+  border-color: #000;
+}
+.nav-pill-accent:hover {
+  background: #222;
+  border-color: #222;
+}
+
+/* Danger — Clear KB */
+.nav-pill-danger:hover {
+  background: #ef4444;
+  color: #fff;
+  border-color: #ef4444;
+}
+
+/* Upload progress inline pill */
+.nav-progress-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.04);
+  border: 1px solid rgba(0,0,0,0.07);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1a1c1c;
+  flex-shrink: 0;
+}
+
+.upload-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #000;
+  animation: pulse-dot 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+@keyframes pulse-dot {
+  0%,100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.4; transform: scale(0.75); }
+}
+
+.upload-track {
+  width: 64px; height: 3px;
+  background: rgba(0,0,0,0.1);
+  border-radius: 99px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.upload-fill {
+  height: 100%;
+  background: #000;
+  border-radius: 99px;
+  transition: width 0.4s ease;
+}
+
+/* Mobile: hide text labels below 640px */
+@media (max-width: 639px) {
+  .nav-pill span:not(.material-symbols-outlined):not(#file-count-badge) { display: none; }
+  .nav-pill { padding: 0 9px; }
+  .logo-text { font-size: 18px; }
+  .logo-dot { display: none; }
+  .navbar-divider { margin: 0; }
+}
+
+/* ============================================================
+   3-COLUMN CONTENT LAYOUT
+   ============================================================ */
+
+/* Mobile: single column, chat fills full width */
+.content-layout {
+  display: flex;
+  gap: 20px;
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  align-items: flex-start;
+}
+
+/* Left gutter — balances the citations column on very wide screens */
+.col-gutter {
+  width: 260px;
+  flex-shrink: 0;
+}
+
+/* Chat column — grows to fill available space, capped so it stays readable */
+.col-chat {
+  flex: 1;
+  min-width: 0;
+  max-width: 720px;
+}
+
+/* Citations column — fixed width, sticks to viewport top below navbar */
+.col-citations {
+  width: 260px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 88px; /* navbar height (52px) + 16px gap + 20px breathing room */
+  max-height: calc(100vh - 108px);
+  overflow-y: auto;
+}
+
+/* Hide citations + gutter below xl, let chat fill full width */
+@media (max-width: 1199px) {
+  .col-citations { display: none; }
+  .col-gutter    { display: none; }
+  .col-chat      { max-width: 100%; }
+}
+
+/* ============================================================
+   CITATIONS PANEL
+   ============================================================ */
+.citations-inner {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  border-radius: 20px;
+  padding: 18px;
+  box-shadow:
+    0 2px 8px rgba(0,0,0,0.04),
+    inset 0 1px 0 rgba(255,255,255,0.9);
+}
+
+/* Header row */
+.citations-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+}
+
+.citations-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #1a1c1c;
+}
+
+/* Empty state */
+.citations-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 24px 8px;
+  gap: 4px;
+}
+
+.citations-empty p {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(97, 99, 99, 0.55);
+}
+
+/* Source list */
+.citations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Individual source card */
+.source-card {
+  background: rgba(255,255,255,0.6);
+  border: 1px solid rgba(0,0,0,0.07);
+  border-radius: 12px;
+  padding: 10px 12px;
+  cursor: default;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+  animation: fadeUp 0.25s ease both;
+}
+
+.source-card:hover {
+  background: rgba(255,255,255,0.9);
+  border-color: rgba(0,0,0,0.12);
+  transform: translateY(-1px);
+}
+
+.source-card-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-bottom: 5px;
+}
+
+.source-card-icon {
+  font-size: 14px !important;
+  color: #616363;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 20 !important;
+}
+
+.source-card-name {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  color: #1a1c1c;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
+.source-card-excerpt {
+  font-family: 'Inter', sans-serif;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: #616363;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.source-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  flex-wrap: wrap;
+}
+
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: rgba(0,0,0,0.05);
+  color: #616363;
+  border: 1px solid rgba(0,0,0,0.06);
+}
+
+.source-badge.relevance-high {
+  background: rgba(0,0,0,0.07);
+  color: #1a1c1c;
+  border-color: rgba(0,0,0,0.1);
+}
+
+/* Score bar */
+.score-bar-wrap {
+  flex: 1;
+  height: 3px;
+  background: rgba(0,0,0,0.07);
+  border-radius: 99px;
+  overflow: hidden;
+  min-width: 32px;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: #1a1c1c;
+  border-radius: 99px;
+  transition: width 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+
+/* Footer note */
+.citations-note {
+  margin-top: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 10.5px;
+  color: rgba(97,99,99,0.45);
+  text-align: center;
+  line-height: 1.4;
+}
+
+/* "New query" transition — fade out old cards */
+.citations-list.fading .source-card {
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+/* Scrollbar inside citations column */
+.col-citations::-webkit-scrollbar { width: 3px; }
+.col-citations::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.08);
+  border-radius: 10px;
+}
+
+#drawer {
+  transition: transform 0.32s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#drawer.open {
+  transform: translateX(0);
+}
+
+#drawer-backdrop {
+  transition: opacity 0.32s ease;
+}
+#drawer-backdrop.visible {
+  opacity: 1;
+  display: block !important;
+}
+
+/* Drawer action buttons */
+.drawer-action-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s, transform 0.1s;
+}
+.drawer-action-btn:active { transform: scale(0.97); }
+
+/* ============================================================
+   GLASS PANEL
+   ============================================================ */
 .glass-panel {
   background: rgba(255, 255, 255, 0.15);
   backdrop-filter: blur(20px);
@@ -27,31 +474,34 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.3);
   box-shadow: 0 40px 40px -40px rgba(0, 0, 0, 0.06);
 }
-
 .glass-panel:hover {
   border-color: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 0 24px rgba(0, 0, 0, 0.03), 0 0 2px rgba(255, 255, 255, 0.5);
 }
 
-/* ---------- Custom scrollbar ---------- */
+/* ============================================================
+   CUSTOM SCROLLBAR
+   ============================================================ */
 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(0, 0, 0, 0.1);
+  background: rgba(0, 0, 0, 0.08);
   border-radius: 10px;
 }
-.custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.25); }
+.custom-scrollbar:hover::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.2); }
 
-/* ---------- Material Symbols defaults ---------- */
+/* ============================================================
+   MATERIAL SYMBOLS
+   ============================================================ */
 .material-symbols-outlined {
   font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
 }
 
-/* ---------- Thinking card — shimmer + pulse ---------- */
+/* ============================================================
+   THINKING CARD
+   ============================================================ */
 @keyframes shimmer {
   0%   { transform: translateX(-100%) skewX(-20deg); }
   100% { transform: translateX(200%)  skewX(-20deg); }
 }
-
 @keyframes pulse-soft {
   0%, 100% { opacity: 0.5; }
   50%       { opacity: 0.85; }
@@ -60,47 +510,29 @@ body {
 .thinking-pulse { animation: pulse-soft 3s ease-in-out infinite; }
 
 .shimmer-layer {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: 0.4;
+  position: absolute; inset: 0; overflow: hidden;
+  border-radius: inherit; pointer-events: none; opacity: 0.4;
 }
 .shimmer-layer::after {
   content: "";
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 50%;
-  height: 100%;
-  background: linear-gradient(
-    to right,
-    rgba(255,255,255,0) 0%,
-    rgba(255,255,255,0.5) 50%,
-    rgba(255,255,255,0) 100%
-  );
+  position: absolute; top: 0; left: 0; width: 50%; height: 100%;
+  background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.5) 50%, rgba(255,255,255,0) 100%);
   animation: shimmer 2.8s infinite linear;
 }
 
-/* ---------- Skeleton lines ---------- */
+/* ============================================================
+   SKELETON LINES
+   ============================================================ */
 .skeleton-line {
-  height: 12px;
+  height: 11px;
   background: rgba(0, 0, 0, 0.06);
   border-radius: 6px;
-  position: relative;
-  overflow: hidden;
+  position: relative; overflow: hidden;
 }
 .skeleton-line::after {
   content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    90deg,
-    transparent 25%,
-    rgba(255,255,255,0.5) 50%,
-    transparent 75%
-  );
+  position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent 25%, rgba(255,255,255,0.5) 50%, transparent 75%);
   background-size: 200% 100%;
   animation: skeleton-sweep 1.8s infinite;
 }
@@ -109,7 +541,9 @@ body {
   100% { background-position: -200% 0; }
 }
 
-/* ---------- Streaming cursor ---------- */
+/* ============================================================
+   STREAMING CURSOR
+   ============================================================ */
 .streaming-cursor::after {
   content: "▋";
   display: inline-block;
@@ -122,109 +556,215 @@ body {
   50%       { opacity: 0; }
 }
 
-/* ---------- Chat message bubbles ---------- */
+/* ============================================================
+   CHAT BUBBLES
+   ============================================================ */
 .msg-user {
   display: flex;
   justify-content: flex-end;
+  animation: fadeUp 0.25s ease both;
 }
 .msg-user .bubble {
   background: #000;
   color: #fff;
   border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
   padding: 0.75rem 1.25rem;
-  max-width: 72%;
+  max-width: 80%;
   font-size: 16px;
   line-height: 1.6;
+  word-break: break-word;
 }
 
 .msg-assistant {
   display: flex;
   justify-content: flex-start;
+  animation: fadeUp 0.3s ease both;
 }
-.msg-assistant .bubble-wrap {
-  max-width: 88%;
-  width: 100%;
-}
+.msg-assistant .bubble-wrap { max-width: 94%; width: 100%; }
 
 /* Answer card */
 .answer-card {
-  background: rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.2);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 1.5rem;
-  padding: 2rem;
-  box-shadow: 0 20px 40px -20px rgba(0, 0, 0, 0.08);
+  padding: 1.5rem;
+  box-shadow: 0 16px 32px -16px rgba(0, 0, 0, 0.07);
 }
+@media (min-width: 640px) { .answer-card { padding: 2rem; } }
 
 .answer-card .answer-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.25rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  display: flex; align-items: center; gap: 0.875rem;
+  margin-bottom: 1.25rem; padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
 }
 
 .answer-card .answer-body {
-  font-size: 16px;
-  line-height: 1.75;
-  color: #1a1c1c;
-  white-space: pre-wrap;
+  font-size: 16px; line-height: 1.75;
+  color: #1a1c1c; word-break: break-word;
 }
+
+/* Markdown */
+.answer-body p { margin-bottom: 0.875em; }
+.answer-body p:last-child { margin-bottom: 0; }
+.answer-body h1,.answer-body h2,.answer-body h3,
+.answer-body h4,.answer-body h5,.answer-body h6 {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600; letter-spacing: -0.02em;
+  margin-top: 1.25em; margin-bottom: 0.5em; color: #000;
+}
+.answer-body h1 { font-size:1.5em; }
+.answer-body h2 { font-size:1.25em; }
+.answer-body h3 { font-size:1.1em; }
+.answer-body ul,.answer-body ol { padding-left:1.5rem; margin-bottom:0.875em; }
+.answer-body li { margin-bottom:0.25em; }
+.answer-body ul { list-style-type:disc; }
+.answer-body ol { list-style-type:decimal; }
+.answer-body strong { font-weight:700; color:#000; }
+.answer-body em { font-style:italic; }
+.answer-body blockquote {
+  border-left:3px solid rgba(0,0,0,0.12); padding-left:1rem;
+  margin:0.875em 0; color:#616363; font-style:italic;
+}
+.answer-body code:not(pre code) {
+  background:rgba(0,0,0,0.06); padding:0.15em 0.4em;
+  border-radius:4px; font-family:'Courier New',monospace;
+  font-size:0.875em; color:#1a1a1a;
+}
+.answer-body pre {
+  position:relative; background:#1a1c1c;
+  border-radius:0.875rem; padding:1rem 1.25rem;
+  margin:0.875em 0; overflow-x:auto;
+}
+.answer-body pre code {
+  font-family:'Courier New',Courier,monospace;
+  font-size:0.875em; color:#e2e2e2;
+  line-height:1.6; white-space:pre;
+}
+
+/* Code block copy button */
+.code-block-wrap { position:relative; }
+.btn-copy-code {
+  position:absolute; top:0.5rem; right:0.5rem;
+  background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.15);
+  color:rgba(255,255,255,0.6); border-radius:0.4rem;
+  padding:0.25rem 0.5rem; font-size:11px; font-weight:600;
+  letter-spacing:0.05em; cursor:pointer;
+  display:flex; align-items:center; gap:0.25rem;
+  transition:background 0.15s,color 0.15s; user-select:none;
+}
+.btn-copy-code:hover { background:rgba(255,255,255,0.2); color:#fff; }
+.btn-copy-code .material-symbols-outlined { font-size:14px; }
+
+.answer-body table {
+  width:100%; border-collapse:collapse; margin:0.875em 0;
+  font-size:0.9em; overflow-x:auto; display:block;
+}
+.answer-body th,.answer-body td {
+  padding:0.5rem 0.75rem; border:1px solid rgba(0,0,0,0.1); text-align:left;
+}
+.answer-body th { background:rgba(0,0,0,0.04); font-weight:600; }
+.answer-body tr:nth-child(even) { background:rgba(0,0,0,0.02); }
+.answer-body hr { border:none; border-top:1px solid rgba(0,0,0,0.1); margin:1em 0; }
+.answer-body a { color:#000; text-decoration:underline; text-underline-offset:2px; opacity:0.7; }
+.answer-body a:hover { opacity:1; }
 
 /* Feedback row */
 .feedback-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid rgba(0, 0, 0, 0.05);
-  opacity: 0.55;
-  transition: opacity 0.2s;
+  display:flex; align-items:center; justify-content:space-between;
+  margin-top:1.25rem; padding-top:1rem;
+  border-top:1px solid rgba(0,0,0,0.05);
+  opacity:0.5; transition:opacity 0.2s; flex-wrap:wrap; gap:0.5rem;
 }
-.feedback-row:hover { opacity: 1; }
+.feedback-row:hover { opacity:1; }
 .feedback-row button {
-  display: flex;
+  display:flex; align-items:center; gap:0.375rem;
+  font-size:13px; font-weight:600; letter-spacing:0.05em;
+  cursor:pointer; transition:color 0.15s;
+}
+.feedback-row button:hover { color:#000; }
+
+/* ============================================================
+   VIEW TRANSITIONS
+   ============================================================ */
+.view { animation: fadeUp 0.35s ease both; }
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(12px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+#toast { transition: opacity 0.3s, transform 0.3s; }
+#toast.show { opacity:1; transform:translateY(0); }
+#toast.hide { opacity:0; transform:translateY(10px); }
+
+/* ============================================================
+   SUGGESTION CHIPS
+   ============================================================ */
+.suggestion-chip {
+  display: inline-flex;
   align-items: center;
-  gap: 0.375rem;
+  padding: 6px 14px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 999px;
+  font-family: 'Inter', sans-serif;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.05em;
+  color: #5d5f5f;
   cursor: pointer;
-  transition: color 0.15s;
+  transition: background 0.15s, color 0.15s, transform 0.1s, border-color 0.15s;
+  user-select: none;
 }
-.feedback-row button:hover { color: #000; }
-
-/* ---------- View transitions ---------- */
-.view { animation: fadeUp 0.35s ease both; }
-@keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-/* ---------- Toast ---------- */
-#toast { transition: opacity 0.3s, transform 0.3s; }
-#toast.show { opacity: 1; transform: translateY(0); }
-#toast.hide { opacity: 0; transform: translateY(12px); }
-
-/* ---------- Suggestion chips ---------- */
-.suggestion-chip { transition: background 0.15s, color 0.15s, transform 0.1s; }
+.suggestion-chip:hover { background:#000; color:#fff; border-color:#000; }
 .suggestion-chip:active { transform: scale(0.95); }
 
-/* ---------- File item ---------- */
+/* ============================================================
+   FILE ITEMS
+   ============================================================ */
 .file-item { transition: background 0.15s; }
+.file-item .btn-delete-file { transition: opacity 0.15s, color 0.15s, background 0.15s; }
+@media (hover: none) {
+  .file-item .btn-delete-file { opacity: 1 !important; }
+}
 
-/* ---------- Sidebar collapse ---------- */
-#sidebar { transition: transform 0.3s ease; }
-#sidebar.collapsed { transform: translateX(-100%); }
-#main    { transition: margin-left 0.3s ease; }
-#main.expanded { margin-left: 0 !important; }
+/* ============================================================
+   SCROLL TO TOP
+   ============================================================ */
+#btn-scroll-top { transition: opacity 0.3s, transform 0.3s; }
+#btn-scroll-top.visible { opacity: 1; pointer-events: auto; }
 
-/* ---------- URL textarea ---------- */
+/* ============================================================
+   SEARCH TEXTAREA
+   ============================================================ */
+#search-input { outline: none; field-sizing: content; }
+
+/* ============================================================
+   TOOLTIP
+   ============================================================ */
+.tooltip-label { pointer-events: none; z-index: 10; }
+
+/* ============================================================
+   URL TEXTAREA
+   ============================================================ */
 #url-input { outline: none; transition: box-shadow 0.2s; }
-#url-input:focus { box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08); }
+#url-input:focus { box-shadow: 0 0 0 3px rgba(0,0,0,0.07); }
 
-/* ---------- Button press ---------- */
+/* ============================================================
+   MISC
+   ============================================================ */
 button:active { transform: scale(0.97); }
+kbd { font-family: inherit; font-size: 0.85em; }
+
+:focus-visible {
+  outline: 2px solid rgba(0,0,0,0.35);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (max-width: 639px) {
+  .logo-text { font-size: 19px; }
+}

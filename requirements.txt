@@ -1,13 +1,22 @@
 # ── Web framework ─────────────────────────────────────────────────────────────
 flask==3.1.1
+python-dotenv==1.0.1
+
+# ── WSGI server (production) ──────────────────────────────────────────────────
+gunicorn==23.0.0
 
 # ── LangChain ─────────────────────────────────────────────────────────────────
 langchain==0.3.24
 langchain-community==0.3.23
 langchain-core==0.3.56
-langchain-ollama==0.3.2
 
-# ── Ollama client ─────────────────────────────────────────────────────────────
+# ── LLM provider — Groq (cloud, API key required) ─────────────────────────────
+langchain-groq==0.2.4
+
+# ── Embeddings — Ollama (local, model: mxbai-embed-large) ─────────────────────
+# langchain-ollama is kept because OllamaEmbeddings is used in vector_store.py.
+# You no longer need to pull llama3.2:3b — only the embedding model is needed.
+langchain-ollama==0.3.2
 ollama==0.4.8
 
 # ── Document loading ──────────────────────────────────────────────────────────
@@ -15,5 +24,7 @@ pypdf==5.4.0
 beautifulsoup4==4.13.3
 lxml==5.3.1
 
-# ── Vector store ──────────────────────────────────────────────────────────────
-faiss-cpu==1.11.0
+# ── Vector store — ChromaDB ───────────────────────────────────────────────────
+# chromadb 1.x ships prebuilt wheels on Windows (0.6.x may require MSVC for chroma-hnswlib).
+chromadb==1.5.9
+langchain-chroma==1.1.0

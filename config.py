@@ -1,65 +1,154 @@
 """
 config.py — Centralised application configuration.
 
-All paths and tuneable constants live here. Environment variables
-override defaults when set (e.g. in a .env file or injected by Docker).
+Settings are read from environment variables on every attribute access
+via properties, so the values are always current regardless of when
+load_env() was called relative to this module being imported.
 
-Usage
------
-    from config import settings
-    print(settings.UPLOAD_DIR)
+Paths are computed once from ROOT_DIR and never change.
 """
 
+import logging
 import os
 from pathlib import Path
 
-# ---------------------------------------------------------------------------
-# Repository root  (this file lives at the repo root)
-# ---------------------------------------------------------------------------
+from dotenv import load_dotenv
+
+logger = logging.getLogger(__name__)
 
 ROOT_DIR = Path(__file__).parent.resolve()
+ENV_FILE = ROOT_DIR / ".env"
+
+
+def _sanitize_env_value(value: str) -> str:
+    """Strip whitespace, quotes, and BOM from env values."""
+    if not value:
+        return ""
+    value = value.strip().strip("\ufeff")
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        value = value[1:-1].strip()
+    return value
+
+
+def load_env(*, override: bool = True) -> bool:
+    """
+    Load environment variables from the project-root .env file.
+
+    Always uses ROOT_DIR / '.env' so the key is found even when the
+    process was started from a different working directory (IDE, flask run, etc.).
+
+    Returns True when the .env file exists and was loaded.
+    """
+    if not ENV_FILE.is_file():
+        logger.warning(
+            "No .env file at %s — copy .env.example to .env and set GROQ_API_KEY.",
+            ENV_FILE,
+        )
+        return False
+
+    load_dotenv(ENV_FILE, override=override)
+    return True
 
 
 class Settings:
-    """Application-wide settings resolved at import time."""
+    """
+    All settings exposed as plain attributes.
+    Paths are fixed at import time (they don't come from env vars).
+    All other settings are read fresh from os.environ on each access
+    via __getattr__ so load_dotenv() timing never matters.
+    """
 
-    # ── Paths ────────────────────────────────────────────────────────────────
-
+    # ── Fixed paths (not env-var-driven) ────────────────────────────────────
     FRONTEND_DIR    : Path = ROOT_DIR / "frontend"
-    TEMPLATE_DIR    : Path = FRONTEND_DIR / "templates"
-    STATIC_DIR      : Path = FRONTEND_DIR / "static"
-
+    TEMPLATE_DIR    : Path = ROOT_DIR / "frontend" / "templates"
+    STATIC_DIR      : Path = ROOT_DIR / "frontend" / "static"
     DATA_DIR        : Path = ROOT_DIR / "data"
-    UPLOAD_DIR      : Path = DATA_DIR / "uploads"
-    INDEX_DIR       : Path = DATA_DIR / "index"
-    CONV_STATE_FILE : Path = DATA_DIR / "conversation.json"
+    UPLOAD_DIR      : Path = ROOT_DIR / "data" / "uploads"
+    INDEX_DIR       : Path = ROOT_DIR / "data" / "index"
+    CONV_STATE_FILE : Path = ROOT_DIR / "data" / "conversation.json"
 
-    # ── Ollama / LLM ─────────────────────────────────────────────────────────
+    # ── Env-var backed settings — read fresh every time via properties ───────
 
-    OLLAMA_MODEL       : str = os.getenv("OLLAMA_MODEL",       "llama3.2:3b")
-    OLLAMA_EMBED_MODEL : str = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+    @property
+    def GROQ_API_KEY(self) -> str:
+        return _sanitize_env_value(os.environ.get("GROQ_API_KEY", ""))
 
-    # ── Flask ────────────────────────────────────────────────────────────────
+    @property
+    def GROQ_MODEL(self) -> str:
+        return os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant").strip()
 
-    SECRET_KEY  : str  = os.getenv("SECRET_KEY",  "change-me-in-production")
-    FLASK_HOST  : str  = os.getenv("FLASK_HOST",  "0.0.0.0")
-    FLASK_PORT  : int  = int(os.getenv("FLASK_PORT", "5000"))
-    FLASK_DEBUG : bool = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+    @property
+    def EMBED_MODEL(self) -> str:
+        return os.environ.get("EMBED_MODEL", "mxbai-embed-large").strip()
 
-    # ── Upload limits ────────────────────────────────────────────────────────
+    @property
+    def CHUNK_SIZE(self) -> int:
+        return int(os.environ.get("CHUNK_SIZE", "800"))
 
-    MAX_UPLOAD_MB    : int = int(os.getenv("MAX_UPLOAD_MB", "64"))
-    MAX_UPLOAD_BYTES : int = MAX_UPLOAD_MB * 1024 * 1024
+    @property
+    def CHUNK_OVERLAP(self) -> int:
+        return int(os.environ.get("CHUNK_OVERLAP", "100"))
 
-    # ── HTTP client identity ─────────────────────────────────────────────────
-    # Suppresses LangChain's USER_AGENT warning and identifies outbound
-    # requests when using the URL-indexing feature.
+    @property
+    def TOP_K(self) -> int:
+        return int(os.environ.get("TOP_K", "5"))
 
-    USER_AGENT : str = os.getenv("USER_AGENT", "Cortex-RAG/1.0")
+    @property
+    def SIMILARITY_THRESHOLD(self) -> float:
+        return float(os.environ.get("SIMILARITY_THRESHOLD", "0.0"))
+
+    @property
+    def CHROMA_COLLECTION_NAME(self) -> str:
+        return os.environ.get("CHROMA_COLLECTION_NAME", "cortex").strip()
+
+    @property
+    def CHROMA_DISTANCE_METRIC(self) -> str:
+        """Chroma hnsw:space value — l2, cosine, or ip. Default l2 (matches old FAISS)."""
+        return os.environ.get("CHROMA_DISTANCE_METRIC", "l2").strip()
+
+    @property
+    def CHROMA_PERSIST_DIR(self) -> Path | None:
+        """
+        Override Chroma persist directory. When unset, vector_store uses
+        INDEX_DIR / 'chroma' (derived from the index_path passed to VectorStore).
+        """
+        raw = os.environ.get("CHROMA_PERSIST_DIR", "").strip()
+        if not raw:
+            return None
+        p = Path(raw)
+        return p if p.is_absolute() else ROOT_DIR / p
+
+    @property
+    def SECRET_KEY(self) -> str:
+        return os.environ.get("SECRET_KEY", "change-me-in-production")
+
+    @property
+    def FLASK_HOST(self) -> str:
+        return os.environ.get("FLASK_HOST", "0.0.0.0")
+
+    @property
+    def FLASK_PORT(self) -> int:
+        return int(os.environ.get("FLASK_PORT", "5000"))
+
+    @property
+    def FLASK_DEBUG(self) -> bool:
+        return os.environ.get("FLASK_DEBUG", "false").lower() == "true"
+
+    @property
+    def MAX_UPLOAD_MB(self) -> int:
+        return int(os.environ.get("MAX_UPLOAD_MB", "64"))
+
+    @property
+    def MAX_UPLOAD_BYTES(self) -> int:
+        return self.MAX_UPLOAD_MB * 1024 * 1024
+
+    @property
+    def USER_AGENT(self) -> str:
+        return os.environ.get("USER_AGENT", "Cortex-RAG/1.0")
 
 
 settings = Settings()
 
-# Apply immediately so LangChain / requests picks it up before any
-# community loader imports run.
-os.environ.setdefault("USER_AGENT", settings.USER_AGENT)
+# Load project-root .env on first import so every entry point (app.py, flask run,
+# tests, IDE run configs) picks up GROQ_API_KEY even when cwd is not the repo root.
+load_env(override=True)

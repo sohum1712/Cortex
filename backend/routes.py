@@ -25,7 +25,7 @@ import shutil
 from flask import Blueprint, Response, jsonify, render_template, request, stream_with_context
 
 from backend.services import active_files, get_conv, get_llm, llm_is_alive, reset_singletons
-from config import settings
+from config import ENV_FILE, load_env, settings
 
 logger = logging.getLogger(__name__)
 
@@ -51,6 +51,49 @@ def api_files():
 
 
 # ---------------------------------------------------------------------------
+# Health check — tests Groq key without touching the knowledge base
+# ---------------------------------------------------------------------------
+
+@bp.route("/api/health")
+def api_health():
+    """
+    Quick liveness + Groq key check.
+    Returns 200 if the key works, 503 with an error message if not.
+    Open http://localhost:5000/api/health in your browser to test.
+    """
+    load_env(override=True)
+    key = settings.GROQ_API_KEY
+    if not key:
+        return jsonify({
+            "status": "error",
+            "groq":   "GROQ_API_KEY not set",
+            "env_file": str(ENV_FILE),
+            "fix":    f"Copy .env.example to {ENV_FILE} and set GROQ_API_KEY.",
+        }), 503
+
+    try:
+        from langchain_groq import ChatGroq
+        from langchain_core.output_parsers import StrOutputParser
+        llm    = ChatGroq(model=settings.GROQ_MODEL, api_key=key, temperature=0, max_tokens=1)
+        result = (llm | StrOutputParser()).invoke("hi")
+        return jsonify({
+            "status":     "ok",
+            "groq":       "connected",
+            "model":      settings.GROQ_MODEL,
+            "env_file":   str(ENV_FILE),
+            "key_prefix": key[:8] + "...",
+            "response":   result,
+        })
+    except Exception as exc:
+        return jsonify({
+            "status": "error",
+            "groq":   str(exc) or repr(exc),
+            "env_file": str(ENV_FILE),
+            "fix":    f"Check GROQ_API_KEY in {ENV_FILE} or create a new key at https://console.groq.com",
+        }), 503
+
+
+# ---------------------------------------------------------------------------
 # Chat — SSE streaming  (requires Ollama)
 # ---------------------------------------------------------------------------
 
@@ -64,6 +107,10 @@ def api_chat():
         {"token": "..."}              — partial token
         {"done": true, "full": "..."} — stream complete
         {"error": "..."}              — exception
+
+    The LLM singleton (and any first-time PDF auto-indexing) is initialised
+    BEFORE we enter the generator so that a slow first-time Ollama embedding
+    run does not block the SSE stream from opening on the client side.
     """
     body     = request.get_json(silent=True) or {}
     user_msg = (body.get("message") or "").strip()
@@ -71,8 +118,15 @@ def api_chat():
     if not user_msg:
         return jsonify({"error": "message is required"}), 400
 
-    llm  = get_llm()
-    conv = get_conv()
+    # Initialise (and auto-index) outside the generator so any slow startup
+    # work (e.g. first-time Ollama embedding of existing PDFs) happens before
+    # the SSE stream is opened.  Errors here return a proper JSON 500.
+    try:
+        llm  = get_llm()
+        conv = get_conv()
+    except Exception as exc:
+        logger.exception("LLM init failed")
+        return jsonify({"error": str(exc)}), 500
 
     def _generate():
         try:
@@ -81,7 +135,22 @@ def api_chat():
                 full += token
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
             conv.save(llm.get_history())
-            yield f"data: {json.dumps({'done': True, 'full': full})}\n\n"
+
+            # Serialize source documents for the citations panel
+            sources = []
+            for doc in getattr(llm, "_last_sources", []):
+                meta  = doc.metadata or {}
+                score = meta.get("_score", 0)
+                # Convert FAISS L2 distance to an approximate 0-1 similarity
+                # Lower L2 distance = more similar; clamp to [0, 1]
+                similarity = max(0.0, 1.0 - min(float(score), 2.0) / 2.0)
+                sources.append({
+                    "source":  meta.get("source", "Unknown"),
+                    "content": doc.page_content.strip()[:300],
+                    "score":   round(similarity, 3),
+                })
+
+            yield f"data: {json.dumps({'done': True, 'full': full, 'sources': sources})}\n\n"
         except Exception as exc:
             logger.exception("Error during chat stream")
             yield f"data: {json.dumps({'error': str(exc)})}\n\n"
@@ -89,7 +158,11 @@ def api_chat():
     return Response(
         stream_with_context(_generate()),
         mimetype="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
+        },
     )
 
 

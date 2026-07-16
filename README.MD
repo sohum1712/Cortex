@@ -2,16 +2,16 @@
 
 # CORTEX
 
-**Your documents, answered — fully offline, no hallucinations.**
+**Your documents, answered — no hallucinations.**
 
-A personal knowledge base powered by local Retrieval-Augmented Generation.
+A personal knowledge base powered by Retrieval-Augmented Generation.
 Upload your documents. Ask anything. Get answers grounded in what you actually gave it — with full conversation memory, and nothing invented.
 
-![Python](https://img.shields.io/badge/Python-3.12+-000000?style=flat-square&logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11+-000000?style=flat-square&logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Backend-Flask-000000?style=flat-square&logo=flask&logoColor=white)
-![Ollama](https://img.shields.io/badge/LLM-Ollama%20%2F%20Llama%203.2-000000?style=flat-square)
-![FAISS](https://img.shields.io/badge/Vector%20Store-FAISS-000000?style=flat-square)
-![Offline](https://img.shields.io/badge/Runs-100%25%20Offline-000000?style=flat-square)
+![Groq](https://img.shields.io/badge/LLM-Groq%20%2F%20Llama%203.1-000000?style=flat-square)
+![Ollama](https://img.shields.io/badge/Embeddings-Ollama%20%2F%20mxbai--embed--large-000000?style=flat-square)
+![ChromaDB](https://img.shields.io/badge/Vector%20Store-ChromaDB-000000?style=flat-square)
 ![License](https://img.shields.io/badge/License-MIT-000000?style=flat-square)
 
 </div>
@@ -22,9 +22,7 @@ Upload your documents. Ask anything. Get answers grounded in what you actually g
 
 Every team and every person accumulates documents faster than anyone can actually read them — policies, notes, reports, research, contracts. Searching them usually means `Ctrl+F` and hoping you guessed the right keyword, or reading the whole thing end to end.
 
-Cortex takes a different approach. Upload your documents once, then just **ask** — and keep asking. It retrieves the exact relevant passages, hands them to a local language model, and answers using only that content, while remembering the flow of your conversation. If the answer isn't in your documents, it says so — it doesn't guess.
-
-No cloud calls. No API keys. No data leaving your machine. Ever.
+Cortex takes a different approach. Upload your documents once, then just **ask** — and keep asking. It retrieves the exact relevant passages, hands them to a language model, and answers using only that content, while remembering the flow of your conversation. If the answer isn't in your documents, it says so — it doesn't guess.
 
 ---
 
@@ -32,15 +30,14 @@ No cloud calls. No API keys. No data leaving your machine. Ever.
 
 | | |
 |---|---|
-| 📥 **Multi-format ingestion** | Upload PDF, DOCX, TXT, and Markdown files, one at a time or in batches |
+| 📥 **Multi-format ingestion** | Upload PDF files, one at a time or in batches |
 | ✂️ **Smart chunking** | Documents are split into overlapping, context-aware chunks for precise retrieval |
-| 🔎 **Semantic search** | FAISS-powered vector search finds meaning, not just matching keywords |
+| 🔎 **Semantic search** | ChromaDB-powered vector search finds meaning, not just matching keywords |
 | 🧹 **Automatic deduplication** | SHA-256 content hashing skips re-embedding documents you've already indexed |
-| 🧠 **Local reasoning** | Llama 3.2 answers strictly from retrieved context — zero hallucination by design |
+| 🧠 **Grounded reasoning** | Answers strictly from retrieved context — zero hallucination by design |
 | 💬 **Persistent conversations** | Full chat history is saved locally, so follow-up questions keep context |
 | ⚡ **Streaming responses** | Answers stream in token-by-token instead of appearing all at once |
 | 📌 **Full traceability** | Every answer shows exactly which document, chunk, and page it came from |
-| 🔌 **Fully offline** | Powered entirely by Ollama — no internet connection required after setup |
 | 🎛️ **Configurable via env vars** | Every setting can be overridden without touching code |
 
 ---
@@ -64,9 +61,14 @@ flowchart TB
     end
 
     subgraph Core["🧠 Core — RAG Engine"]
-        LLM[llm_rag.py<br/>lazy ChatOllama, streaming]
-        Vector[vector_store.py<br/>lazy FAISS, SHA-256 dedup]
+        LLM[llm_rag.py<br/>lazy ChatGroq, streaming]
+        Vector[vector_store.py<br/>lazy ChromaDB, SHA-256 dedup]
         Conv[conversation.py<br/>JSON persistence]
+    end
+
+    subgraph External["☁️ / 💻 External"]
+        Groq[Groq API<br/>LLM generation]
+        Ollama[Ollama local<br/>mxbai-embed-large embeddings]
     end
 
     subgraph Storage["💾 Local Storage"]
@@ -80,8 +82,10 @@ flowchart TB
     Services --> LLM
     Services --> Vector
     Services --> Conv
-    LLM --> Uploads
+    LLM --> Groq
+    Vector --> Ollama
     Vector --> Index
+    LLM --> Uploads
     Conv --> Uploads
 ```
 
@@ -91,20 +95,22 @@ flowchart TB
 
 ```
 Upload → routes.py → services.py → vector_store.py
-       → SHA-256 dedup check → chunk + embed → FAISS index (data/index/)
+       → SHA-256 dedup check → chunk → Ollama embed → ChromaDB index (data/index/chroma/)
 ```
 
 **Querying — every time a question is asked:**
 
 ```
 Ask → routes.py → services.py → conversation.py (load history)
-    → vector_store.py (retrieve top chunks) → llm_rag.py (stream answer via Ollama)
+    → vector_store.py (Ollama embed query → retrieve top chunks)
+    → similarity threshold check (skip Groq if no relevant content found)
+    → llm_rag.py (stream answer via Groq API)
     → conversation.py (save turn) → streamed response to frontend
 ```
 
 Cortex answers **only** from what's inside the retrieved chunks. If nothing relevant is found, it responds with:
 
-> *"I couldn't find this information in your uploaded documents."*
+> *"I could not find this in the uploaded documents."*
 
 ---
 
@@ -112,18 +118,17 @@ Cortex answers **only** from what's inside the retrieved chunks. If nothing rele
 
 | Layer | Technology | Role |
 |---|---|---|
-| Language | Python 3.12+ | Core language |
+| Language | Python 3.11+ | Core language |
 | Backend | Flask (app factory pattern) | Routing, request handling |
+| WSGI server | Gunicorn | Production-grade server (replaces `flask run`) |
 | Frontend | HTML + custom CSS/JS | Black & white, glassmorphic single-page UI |
 | Config | `config.py` + env-var overrides | Centralized, override-friendly settings |
-| LLM Runtime | Ollama | Runs models entirely on your machine |
-| Language Model | Llama 3.2 (3B), lazy-loaded | Generates grounded, streamed answers |
-| Vector Store | FAISS, lazy-loaded | Fast local similarity search |
+| LLM | Groq API (llama-3.1-8b-instant) | Generates grounded, streamed answers |
+| Embeddings | Ollama — mxbai-embed-large | Local embedding, runs entirely on your machine |
+| Vector Store | ChromaDB, lazy-loaded | Persistent local similarity search |
 | Deduplication | SHA-256 hashing | Skips re-indexing identical content |
 | Conversation Memory | JSON persistence | Keeps chat history across sessions |
 | Storage | Local filesystem | `data/uploads/` and `data/index/` |
-
-No SQL. No Docker. No cloud. No paid APIs. No accounts.
 
 ---
 
@@ -131,23 +136,25 @@ No SQL. No Docker. No cloud. No paid APIs. No accounts.
 
 ```
 cortex/
-├── app.py                    # Thin entry point
+├── app.py                    # Thin entry point (dev / direct run)
+├── wsgi.py                   # Gunicorn / WSGI entry point
+├── gunicorn.conf.py          # Production Gunicorn settings
 ├── config.py                 # All settings + env-var overrides
 ├── requirements.txt
+├── .env.example              # Copy to .env and fill in GROQ_API_KEY
 ├── .gitignore
-├── LICENSE
 │
 ├── backend/
 │   ├── __init__.py
 │   ├── factory.py             # create_app()
-│   ├── routes.py               # All route handlers
-│   └── services.py             # LLM + conversation singletons
+│   ├── routes.py              # All route handlers
+│   └── services.py            # LLM + conversation singletons
 │
 ├── core/
 │   ├── __init__.py
-│   ├── llm_rag.py              # Lazy ChatOllama, streaming
-│   ├── vector_store.py          # Lazy FAISS, SHA-256 dedup
-│   └── conversation.py          # JSON persistence
+│   ├── llm_rag.py             # Lazy ChatGroq, streaming, error handling
+│   ├── vector_store.py        # Lazy FAISS, SHA-256 dedup, Ollama embeddings
+│   └── conversation.py        # JSON persistence
 │
 ├── frontend/
 │   ├── templates/
@@ -176,70 +183,94 @@ source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Install Ollama
+### 2. Get a Groq API key
 
-Download it from [ollama.com/download](https://ollama.com/download), then confirm it's installed:
+Groq provides a **free tier** — no credit card required.
+
+1. Go to [console.groq.com](https://console.groq.com) and sign up.
+2. Create an API key under **API Keys**.
+3. Copy `.env.example` to `.env` and paste your key:
+
+```bash
+cp .env.example .env
+# then edit .env and set GROQ_API_KEY=<your-key>
+```
+
+### 3. Install Ollama (for embeddings)
+
+Ollama still runs locally to generate document embeddings. Download it from [ollama.com/download](https://ollama.com/download), then:
 
 ```bash
 ollama --version
 ollama serve
 ```
 
-### 3. Pull the required models
+### 4. Pull the embedding model
 
 ```bash
-ollama pull llama3.2:3b
 ollama pull mxbai-embed-large
 ```
 
-### 4. Configure (optional)
+> **Note:** You no longer need `llama3.2:3b`. Chat generation now runs through Groq. Only the embedding model needs to be pulled locally.
 
-All settings live in `config.py` and can be overridden with environment variables — no code changes needed:
+### 5. Configure (optional)
+
+All settings in `config.py` can be overridden via environment variables in your `.env` file:
 
 ```bash
-export LLM_MODEL=llama3.2:3b
-export EMBED_MODEL=mxbai-embed-large
-export TOP_K=5
+GROQ_MODEL=llama-3.1-8b-instant   # or any model available on Groq
+EMBED_MODEL=mxbai-embed-large
+TOP_K=5
+CHUNK_SIZE=800
+CHUNK_OVERLAP=100
 ```
 
-### 5. Run Cortex
+### 6. Run Cortex
+
+**Development:**
 
 ```bash
 python app.py
 ```
 
-Open the local URL shown in your terminal — usually `http://localhost:5000`.
+**Production (Gunicorn):**
+
+```bash
+gunicorn -c gunicorn.conf.py wsgi:application
+```
+
+Open `http://localhost:5000` (or the host/port you configured).
+
+---
+
+## Production checklist
+
+| | Item |
+|---|---|
+| ✅ | Set a strong random `SECRET_KEY` in `.env` — `python -c "import secrets; print(secrets.token_hex(32))"` |
+| ✅ | Set `FLASK_DEBUG=false` (default) |
+| ✅ | Never commit `.env` — it is in `.gitignore` |
+| ✅ | Run behind a reverse proxy (nginx, Caddy) for TLS termination |
+| ✅ | Tune `GUNICORN_WORKERS` to `2 × CPU + 1` for your server |
 
 ---
 
 ## Using Cortex
 
-1. **Upload** one or more documents from the interface.
-2. Wait for indexing — duplicate files are automatically skipped via hash check.
+1. **Upload** one or more PDF documents from the interface.
+2. Wait for indexing — duplicate files are automatically skipped via SHA-256 hash check.
 3. Type a question and send it — the answer **streams in live**.
 4. Ask follow-up questions — Cortex remembers the conversation.
 5. Check the sources shown with each answer to see exactly where it came from.
 
 ---
 
-## Screenshots
-
-<div align="center">
-
-*(Add screenshots here once available)*
-
-`screenshots/upload.png` · `screenshots/chat.png` · `screenshots/sources.png`
-
-</div>
-
----
-
 ## Design Principles
 
 - **Grounded, not generative.** Cortex never answers from general knowledge — only from what you gave it.
-- **Private by default.** No cloud calls, no telemetry, no accounts. Everything stays local.
 - **Transparent.** Every answer is traceable back to its exact source.
 - **Lazy by design.** Models and indexes load only when needed, keeping startup fast.
+- **Fail clearly.** A missing API key or network error surfaces as a readable message in the UI, not a stack trace.
 - **Simple over clever.** Clean separation between web layer, services, and core engine — easy to read, easy to extend.
 
 ---
@@ -253,10 +284,9 @@ Open the local URL shown in your terminal — usually `http://localhost:5000`.
 - [ ] Voice input
 - [ ] Export chat conversations
 - [x] ~~Chat history~~ — done via `conversation.py`
-- [x] ~~Streaming responses~~ — done via lazy `ChatOllama` streaming
+- [x] ~~Streaming responses~~ — done via lazy `ChatGroq` streaming
 
 ---
-
 
 <div align="center">
 
